@@ -15,7 +15,7 @@ RECOGNITION_THRESHOLD = 0.7
 
 # --- Inisialisasi Model ---
 print("Memuat model dan data...")
-HaarCascade = cv2.CascadeClassifier(cv2.samples.findFile(cv2.data.haarcascades + 'haarcascade_frontalface_default.xml'))
+HaarCascade = cv2.CascadeClassifier('haarcascade_frontalface_default.xml')
 
 # Muat model TFLite
 interpreter = tflite.Interpreter(model_path='facenet_model.tflite')
