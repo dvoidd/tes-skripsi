@@ -76,7 +76,7 @@ except Exception as e:
 
 # --- Koneksi ke Database MySQL ---
 try:
-    db_connection = mysql.connector.connect(host=DB_HOST, user=DB_USER, password=DB_PASS, database=DB_NAME)
+    db_connection = mysql.connector.connect(host=DB_HOST, user=DB_USER, password=DB_PASS, database=DB_NAME, ssl_disabled=True)
     db_cursor = db_connection.cursor(buffered=True)
     print("Koneksi ke database MySQL berhasil.")
 except mysql.connector.Error as err:
