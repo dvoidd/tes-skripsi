@@ -69,7 +69,7 @@ while(True):
 
     # --- ALGORITHM FOR UNRECOGNIZED FACES ---
     # Set a threshold for recognition. You may need to adjust this value.
-    threshold = 1.0 
+    threshold = 0.7
     
     if min_dist > threshold:
         identity = 'Wajah Tidak Dikenal' # Unrecognized Face

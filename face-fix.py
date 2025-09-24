@@ -1,106 +1,209 @@
-from PIL import Image
-from keras.models import load_model
-import numpy as np
-from numpy import asarray
-from numpy import expand_dims
-
-import pickle
+# --- Import Library ---
 import cv2
+import numpy as np
+from numpy import expand_dims
+import pickle
 from keras_facenet import FaceNet
+import datetime
+import mysql.connector
+import telebot
+import io
+import time
+# DIUBAH: Menggunakan library untuk Orange Pi
+import OPi.GPIO as GPIO 
 
-# Initialize HaarCascade for face detection
-HaarCascade = cv2.CascadeClassifier(cv2.samples.findFile(cv2.data.haarcascades + 'haarcascade_frontalface_default.xml'))
+# ... (sisa kode lainnya sama persis seperti sebelumnya) ...
 
-# Initialize FaceNet model
+# =====================================================================
+# --- KONFIGURASI TAMBAHAN (WAJIB DIISI) ---
+# =====================================================================
+
+# --- Konfigurasi MySQL ---
+DB_HOST = "localhost"
+DB_USER = "root"
+DB_PASS = ""
+DB_NAME = "face_recognition_db"
+
+# --- Konfigurasi Telegram ---
+TELEGRAM_TOKEN = "8178565679:AAH7wcfG20hyA1LSR4-yKquCc305nCqHuBc"
+TELEGRAM_CHAT_ID = "1370373890"
+
+# --- Konfigurasi GPIO untuk Buzzer ---
+BUZZER_PIN = 17 # Pastikan pin ini sesuai dengan koneksi di Orange Pi Anda
+
+# =====================================================================
+# --- KONFIGURASI SCRIPT (SESUAI PERMINTAAN) ---
+# =====================================================================
+FRAME_SKIP = 15
+PROC_WIDTH = 320
+PROC_HEIGHT = 240
+RECOGNITION_THRESHOLD = 0.75
+
+# ... (dan seterusnya, seluruh sisa kode tidak perlu diubah) ...
+# Konfigurasi Zona Trigger disesuaikan dengan resolusi baru
+TRIGGER_ZONE_Y_START = int(PROC_HEIGHT * 0.70) # Mulai dari 70% bagian bawah layar
+TRIGGER_ZONE = (0, TRIGGER_ZONE_Y_START, PROC_WIDTH, PROC_HEIGHT - TRIGGER_ZONE_Y_START)
+
+
+# =====================================================================
+# --- Inisialisasi Tambahan ---
+# =====================================================================
+
+# --- Inisialisasi GPIO ---
+try:
+    GPIO.setwarnings(False)
+    GPIO.setmode(GPIO.BCM)
+    GPIO.setup(BUZZER_PIN, GPIO.OUT)
+    GPIO.output(BUZZER_PIN, GPIO.LOW) # Pastikan buzzer mati saat mulai
+    print(f"GPIO pin {BUZZER_PIN} untuk buzzer berhasil diinisialisasi.")
+except Exception as e:
+    print(f"Gagal menginisialisasi GPIO. Fitur buzzer tidak akan aktif. Error: {e}")
+
+# --- Inisialisasi Bot Telegram ---
+try:
+    bot = telebot.TeleBot(TELEGRAM_TOKEN)
+    print("Bot Telegram berhasil diinisialisasi.")
+except Exception as e:
+    bot = None
+    print(f"Gagal menginisialisasi Bot Telegram: {e}")
+
+# --- Koneksi ke Database MySQL ---
+try:
+    db_connection = mysql.connector.connect(host=DB_HOST, user=DB_USER, password=DB_PASS, database=DB_NAME)
+    db_cursor = db_connection.cursor()
+    print("Koneksi ke database MySQL berhasil.")
+except mysql.connector.Error as err:
+    db_connection = None
+    print(f"Error koneksi database: {err}. Logging ke database dinonaktifkan.")
+
+# =====================================================================
+# --- FUNGSI HELPER ---
+# =====================================================================
+def activate_buzzer(duration=1):
+    """Membunyikan buzzer selama durasi tertentu (dalam detik)."""
+    try:
+        print("ALERT: Wajah tidak dikenal! Membunyikan buzzer...")
+        GPIO.output(BUZZER_PIN, GPIO.HIGH)
+        time.sleep(duration)
+        GPIO.output(BUZZER_PIN, GPIO.LOW)
+    except Exception as e:
+        print(f"Gagal membunyikan buzzer: {e}")
+
+def log_to_database(frame, timestamp, status, name):
+    """Menyimpan data deteksi ke database MySQL."""
+    if db_connection is None: return
+    try:
+        _, img_encoded = cv2.imencode('.jpg', frame)
+        img_bytes = img_encoded.tobytes()
+        sql = "INSERT INTO deteksi_wajah (timestamp, status, nama, gambar) VALUES (%s, %s, %s, %s)"
+        val = (timestamp, status, name, img_bytes)
+        db_cursor.execute(sql, val)
+        db_connection.commit()
+        print(f"Data berhasil disimpan ke DB: {name} - {status}")
+    except mysql.connector.Error as err:
+        print(f"Gagal menyimpan ke DB: {err}")
+
+def send_telegram_notification(frame_with_box, caption):
+    """Mengirim notifikasi foto ke Telegram."""
+    if bot is None: return
+    try:
+        _, img_encoded = cv2.imencode('.jpg', frame_with_box)
+        image_stream = io.BytesIO(img_encoded.tobytes())
+        image_stream.name = 'detection.jpg'; image_stream.seek(0)
+        bot.send_photo(TELEGRAM_CHAT_ID, image_stream, caption=caption, timeout=60)
+        print("Notifikasi Telegram terkirim.")
+    except Exception as e:
+        print(f"Gagal mengirim notifikasi Telegram: {e}")
+
+# =====================================================================
+# --- Inisialisasi Model ---
+# =====================================================================
+print("Memuat model dan data...")
+FaceCascade = cv2.CascadeClassifier(cv2.samples.findFile(cv2.data.haarcascades + 'haarcascade_frontalface_default.xml'))
+BodyCascade = cv2.CascadeClassifier(cv2.samples.findFile(cv2.data.haarcascades + 'haarcascade_fullbody.xml'))
 MyFaceNet = FaceNet()
+with open("data.pkl", "rb") as myfile:
+    database = pickle.load(myfile)
+print("Model dan data berhasil dimuat.")
 
-# Load the known faces database
-myfile = open("data.pkl", "rb")
-database = pickle.load(myfile)
-myfile.close()
+# =====================================================================
+# --- Mulai Video Capture ---
+# =====================================================================
+cap = cv2.VideoCapture(1)
+cap.set(cv2.CAP_PROP_FRAME_WIDTH, PROC_WIDTH)
+cap.set(cv2.CAP_PROP_FRAME_HEIGHT, PROC_HEIGHT)
+frame_counter = 0; last_identity = ' '; last_box = (0, 0, 0, 0); is_triggered = False
 
-# Start video capture
-# MODIFIKASI 1: GANTI INDEKS KAMERA SESUAI KEBUTUHAN (misal: 1)
-cap = cv2.VideoCapture(1) 
+print("Memulai kamera...")
+try:
+    while(True):
+        ret, frame = cap.read()
+        if not ret:
+            print("Gagal membaca frame dari kamera. Keluar..."); break
 
-# MODIFIKASI 2: TURUNKAN RESOLUSI KAMERA
-# Resolusi umum: 640x480 (480p) atau 320x240.
-cap.set(cv2.CAP_PROP_FRAME_WIDTH, 640)
-cap.set(cv2.CAP_PROP_FRAME_HEIGHT, 480)
+        gbr_small = cv2.resize(frame, (PROC_WIDTH, PROC_HEIGHT))
+        (zx, zy, zw, zh) = TRIGGER_ZONE
+        cv2.rectangle(gbr_small, (zx, zy), (zx + zw, zy + zh), (255, 255, 0), 1)
+        cv2.putText(gbr_small, "Zona Trigger", (zx + 5, zy + 15), cv2.FONT_HERSHEY_SIMPLEX, 0.4, (255, 255, 0), 1)
 
-# MODIFIKASI 3: PENGATURAN UNTUK MENGURANGI RENDERING
-frame_count = 0
-RECOGNITION_INTERVAL = 5 # Lakukan pengenalan setiap 5 frame
-identity = 'Menginisialisasi...' # Teks awal
-
-while(True):
-    ret, gbr1 = cap.read()
-    if not ret:
-        print("Gagal mengambil frame, keluar...")
-        break
-    
-    # Hanya proses frame sesuai interval untuk mengurangi beban kerja
-    if frame_count % RECOGNITION_INTERVAL == 0:
-        # Ubah frame ke grayscale untuk deteksi wajah (lebih cepat)
-        gray_frame = cv2.cvtColor(gbr1, cv2.COLOR_BGR2GRAY)
+        if frame_counter % FRAME_SKIP == 0:
+            bodies = BodyCascade.detectMultiScale(gbr_small, 1.2, 3)
+            is_triggered = any(by + bh > TRIGGER_ZONE_Y_START for (_, by, _, bh) in bodies)
+            
+            if is_triggered:
+                wajah = FaceCascade.detectMultiScale(gbr_small, 1.2, 5)
+                if len(wajah) > 0:
+                    x1, y1, width, height = wajah[0]; x2, y2 = x1 + width, y1 + height
+                    gbr_rgb = cv2.cvtColor(gbr_small, cv2.COLOR_BGR2RGB)
+                    face = gbr_rgb[y1:y2, x1:x2]
+                    
+                    if face.size > 0:
+                        face_resized = cv2.resize(face, (160, 160))
+                        signature = MyFaceNet.embeddings(expand_dims(face_resized, axis=0))
+                        min_dist = 100; identity = ' '
+                        for key, value in database.items():
+                            dist = np.linalg.norm(signature - value)
+                            if dist < min_dist:
+                                min_dist, identity = dist, key
+                        
+                        timestamp = datetime.datetime.now()
+                        frame_to_notify = gbr_small.copy()
+                        
+                        if min_dist > RECOGNITION_THRESHOLD:
+                            status, identity_final = "Tidak Dikenali", "Tidak Dikenali"
+                            caption_text = f"Wajah tidak dikenali terdeteksi!\nTimestamp: {timestamp.strftime('%Y-%m-%d %H:%M:%S')}"
+                            cv2.rectangle(frame_to_notify, (x1, y1), (x2, y2), (0, 0, 255), 2)
+                            activate_buzzer(duration=1) # Bunyikan buzzer
+                        else:
+                            status, identity_final = "Dikenali", identity
+                            caption_text = f"Wajah dikenali: {identity_final}\nTimestamp: {timestamp.strftime('%Y-%m-%d %H:%M:%S')}"
+                            cv2.rectangle(frame_to_notify, (x1, y1), (x2, y2), (0, 255, 0), 2)
+                        
+                        send_telegram_notification(frame_to_notify, caption_text)
+                        log_to_database(frame_to_notify, timestamp, status, identity_final)
+                        last_identity, last_box = f'{identity_final} ({min_dist:.2f})', (x1, y1, x2, y2)
+                else:
+                    last_identity, last_box = ' ', (0,0,0,0) # Wajah tidak ada, reset
+            else:
+                last_identity, last_box = ' ', (0,0,0,0) # Trigger tidak aktif, reset
         
-        # Detect faces in the grayscale frame
-        wajah = HaarCascade.detectMultiScale(gray_frame, 1.1, 4)
+        if last_identity != ' ':
+            (x1, y1, x2, y2) = last_box
+            cv2.putText(gbr_small, last_identity, (x1, y1 - 10), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 255, 255), 1, cv2.LINE_AA)
+            cv2.rectangle(gbr_small, (x1, y1), (x2, y2), (0, 255, 0), 2)
 
-        if len(wajah) > 0:
-            x1, y1, width, height = wajah[0]
-            x1, y1 = abs(x1), abs(y1)
-            x2, y2 = x1 + width, y1 + height
+        cv2.imshow('Face Recognition on Pi', gbr_small)
+        k = cv2.waitKey(5) & 0xFF
+        if k == 27: break # Tekan ESC untuk keluar
+        frame_counter += 1
 
-            # Convert the frame to RGB for processing
-            gbr = cv2.cvtColor(gbr1, cv2.COLOR_BGR2RGB)
-            gbr = Image.fromarray(gbr)
-            gbr_array = asarray(gbr)
-            
-            # Extract the face from the frame
-            face = gbr_array[y1:y2, x1:x2]
-            face = Image.fromarray(face)
-            face = face.resize((160, 160))
-            face = asarray(face)
-
-            # Get the face embedding
-            face = expand_dims(face, axis=0)
-            signature = MyFaceNet.embeddings(face)
-
-            # --- RECOGNITION LOGIC ---
-            min_dist = 100
-            
-            # Compare the detected face with faces in the database
-            for key, value in database.items():
-                dist = np.linalg.norm(signature - value)
-                if dist < min_dist:
-                    min_dist = dist
-                    identity = key # Simpan identitas yang ditemukan
-
-            # --- ALGORITHM FOR UNRECOGNIZED FACES ---
-            threshold = 1.0 
-            if min_dist > threshold:
-                identity = 'Wajah Tidak Dikenal'
-        else:
-            identity = ' ' # Tidak ada wajah terdeteksi
-
-    # Naikkan penghitung frame
-    frame_count += 1
-
-    # Gambar kotak dan teks di SETIAP frame menggunakan hasil terakhir
-    # Ini membuat tampilan tetap responsif meskipun pemrosesan berat dilewati
-    if identity != ' ':
-        # Cari wajah lagi dengan cepat untuk menggambar kotak (opsional, bisa diskip)
-        # Atau gunakan koordinat terakhir. Untuk simpelnya, kita gambar saja teksnya.
-        cv2.putText(gbr1, identity, (10, 30), cv2.FONT_HERSHEY_SIMPLEX, 0.9, (0, 255, 255), 2, cv2.LINE_AA)
-
-    # Tampilkan gambar hasil akhir
-    cv2.imshow('res', gbr1)
-    
-    k = cv2.waitKey(5) & 0xFF
-    if k == 27: # Tekan ESC untuk keluar
-        break
-
-# Release resources
-cv2.destroyAllWindows()
-cap.release()
+finally:
+    # --- Lepaskan semua resource ---
+    print("\nMenutup aplikasi.")
+    cv2.destroyAllWindows()
+    cap.release()
+    if db_connection and db_connection.is_connected():
+        db_cursor.close(); db_connection.close()
+        print("Koneksi database ditutup.")
+    GPIO.cleanup()
+    print("GPIO dibersihkan.")
