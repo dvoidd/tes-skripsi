@@ -34,8 +34,8 @@ DB_PASS = ""  # Isi password database Anda, kosongkan jika tidak ada
 DB_NAME = "face_recognition_db"
 
 # --- Konfigurasi Telegram ---
-TELEGRAM_TOKEN = "GANTI_DENGAN_TOKEN_BOT_ANDA"      # Ganti dengan Token Bot Anda
-TELEGRAM_CHAT_ID = "GANTI_DENGAN_CHAT_ID_ANDA"    # Ganti dengan Chat ID Anda
+TELEGRAM_TOKEN = "8178565679:AAH7wcfG20hyA1LSR4-yKquCc305nCqHuBc"      # Ganti dengan Token Bot Anda
+TELEGRAM_CHAT_ID = "1370373890"    # Ganti dengan Chat ID Anda
 
 # --- Konfigurasi GPIO untuk Buzzer ---
 BUZZER_PIN = 17 # Sesuaikan pin GPIO yang Anda gunakan
