@@ -17,9 +17,9 @@ PI_TYPE = "Orange Pi"
 # =====================================================================
 
 # --- Konfigurasi MySQL ---
-DB_HOST = "localhost"
-DB_USER = "root"
-DB_PASS = ""  # Isi password database Anda, kosongkan jika tidak ada
+DB_HOST = "10.122.15.45"
+DB_USER = "opiuser"
+DB_PASS = "passwordku"  # Isi password database Anda, kosongkan jika tidak ada
 DB_NAME = "face_recognition_db"
 
 # --- Konfigurasi Telegram ---
@@ -27,7 +27,7 @@ TELEGRAM_TOKEN = "8178565679:AAH7wcfG20hyA1LSR4-yKquCc305nCqHuBc"      # Ganti d
 TELEGRAM_CHAT_ID = "1370373890"  # Ganti dengan Chat ID Anda
 
 # --- Konfigurasi GPIO untuk Buzzer ---
-BUZZER_PIN = 17 # Sesuaikan pin GPIO yang Anda gunakan
+BUZZER_PIN = "PC7" # Sesuaikan pin GPIO yang Anda gunakan
 
 # =====================================================================
 # --- PENGATURAN SCRIPT ---
@@ -53,7 +53,7 @@ def setup_gpio():
     if GPIO:
         try:
             GPIO.setwarnings(False)
-            GPIO.setmode(GPIO.BCM)
+            GPIO.setmode(GPIO.SUNXI)
             GPIO.setup(BUZZER_PIN, GPIO.OUT)
             GPIO.output(BUZZER_PIN, GPIO.LOW) # Pastikan buzzer mati saat mulai
             print(f"GPIO pin {BUZZER_PIN} untuk buzzer berhasil diinisialisasi pada {PI_TYPE}.")
@@ -149,7 +149,7 @@ except Exception as e:
 # =====================================================================
 # --- Mulai Video Capture ---
 # =====================================================================
-cap = cv2.VideoCapture(0)
+cap = cv2.VideoCapture(1)
 # Terapkan konfigurasi resolusi dan FPS
 cap.set(cv2.CAP_PROP_FRAME_WIDTH, FRAME_WIDTH)
 cap.set(cv2.CAP_PROP_FRAME_HEIGHT, FRAME_HEIGHT)
