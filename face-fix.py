@@ -10,19 +10,6 @@ import telebot
 import io
 import time
 
-# Coba import library GPIO untuk Raspberry Pi, jika gagal, ganti ke Orange Pi
-try:
-    import RPi.GPIO as GPIO
-    PI_TYPE = "Raspberry Pi"
-except (ImportError, RuntimeError):
-    try:
-        import OPi.GPIO as GPIO
-        PI_TYPE = "Orange Pi"
-    except (ImportError, RuntimeError):
-        GPIO = None
-        PI_TYPE = "Bukan Pi"
-        print("PERINGATAN: Library GPIO tidak ditemukan. Fitur buzzer tidak akan aktif.")
-
 # =====================================================================
 # --- KONFIGURASI (WAJIB DIISI SESUAI DATA ANDA) ---
 # =====================================================================
@@ -34,11 +21,8 @@ DB_PASS = ""  # Isi password database Anda, kosongkan jika tidak ada
 DB_NAME = "face_recognition_db"
 
 # --- Konfigurasi Telegram ---
-TELEGRAM_TOKEN = "GANTI_DENGAN_TOKEN_BOT_ANDA"      # Ganti dengan Token Bot Anda
-TELEGRAM_CHAT_ID = "GANTI_DENGAN_CHAT_ID_ANDA"    # Ganti dengan Chat ID Anda
-
-# --- Konfigurasi GPIO untuk Buzzer ---
-BUZZER_PIN = 17 # Sesuaikan pin GPIO yang Anda gunakan
+TELEGRAM_TOKEN = "8178565679:AAH7wcfG20hyA1LSR4-yKquCc305nCqHuBc"      # Ganti dengan Token Bot Anda
+TELEGRAM_CHAT_ID = "1370373890"  # Ganti dengan Chat ID Anda
 
 # =====================================================================
 # --- PENGATURAN SCRIPT ---
@@ -52,29 +36,12 @@ FRAME_RATE = 15
 RECOGNITION_THRESHOLD = 0.75
 
 # Jeda waktu (dalam detik) untuk tidak mengirim notif ke orang yang sama
-NOTIFICATION_COOLDOWN = 60
+NOTIFICATION_COOLDOWN = 5
 last_notification_times = {}
 
 # =====================================================================
 # --- INISIALISASI ---
 # =====================================================================
-
-# --- Inisialisasi GPIO ---
-def setup_gpio():
-    if GPIO:
-        try:
-            GPIO.setwarnings(False)
-            GPIO.setmode(GPIO.BCM)
-            GPIO.setup(BUZZER_PIN, GPIO.OUT)
-            GPIO.output(BUZZER_PIN, GPIO.LOW) # Pastikan buzzer mati saat mulai
-            print(f"GPIO pin {BUZZER_PIN} untuk buzzer berhasil diinisialisasi pada {PI_TYPE}.")
-            return True
-        except Exception as e:
-            print(f"Gagal menginisialisasi GPIO. Fitur buzzer tidak akan aktif. Error: {e}")
-            return False
-    return False
-
-is_gpio_ready = setup_gpio()
 
 # --- Inisialisasi Bot Telegram ---
 try:
@@ -97,17 +64,6 @@ except mysql.connector.Error as err:
 # =====================================================================
 # --- FUNGSI-FUNGSI BANTUAN ---
 # =====================================================================
-def activate_buzzer(duration=0.5):
-    """Membunyikan buzzer selama durasi tertentu (dalam detik)."""
-    if not is_gpio_ready: return
-    try:
-        print("ALERT: Wajah tidak dikenal! Membunyikan buzzer...")
-        GPIO.output(BUZZER_PIN, GPIO.HIGH)
-        time.sleep(duration)
-        GPIO.output(BUZZER_PIN, GPIO.LOW)
-    except Exception as e:
-        print(f"Gagal membunyikan buzzer: {e}")
-
 def log_to_database(timestamp, status, name, frame):
     """Menyimpan data deteksi ke database MySQL."""
     if db_connection is None: return
@@ -223,7 +179,7 @@ try:
                 if status == "Tidak Dikenali":
                     caption_text = (f"⚠️ Wajah Tidak Dikenali Terdeteksi!\n"
                                     f"🕒 Waktu: {timestamp.strftime('%Y-%m-%d %H:%M:%S')}")
-                    activate_buzzer()
+                    # Panggilan ke activate_buzzer() telah dihapus dari sini
 
                 # Buat frame dengan kotak untuk notifikasi
                 frame_for_notif = frame.copy()
@@ -262,6 +218,4 @@ finally:
         db_cursor.close()
         db_connection.close()
         print("Koneksi database ditutup.")
-    if is_gpio_ready:
-        GPIO.cleanup()
-        print("GPIO dibersihkan.")
+    # Bagian GPIO cleanup sudah dihapus
