@@ -17,17 +17,17 @@ PI_TYPE = "Orange Pi"
 # =====================================================================
 
 # --- Konfigurasi MySQL ---
-DB_HOST = "localhost"
-DB_USER = "root"
-DB_PASS = ""  # Isi password database Anda, kosongkan jika tidak ada
+DB_HOST = "10.122.15.45"
+DB_USER = "opiuser"
+DB_PASS = "passwordku"  # Isi password database Anda, kosongkan jika tidak ada
 DB_NAME = "face_recognition_db"
 
 # --- Konfigurasi Telegram ---
-TELEGRAM_TOKEN = "8178565679:AAH7wcfG20hyA1LSR4-yKquCc305nCqHuBc"      # Ganti dengan Token Bot Anda
+TELEGRAM_TOKEN = "8178565679:AAH7wcfG20hyA1LSR4-yKquCc305nCqHuBc"     # Ganti dengan Token Bot Anda
 TELEGRAM_CHAT_ID = "1370373890"  # Ganti dengan Chat ID Anda
 
 # --- Konfigurasi GPIO untuk Buzzer ---
-BUZZER_PIN = 17 # Sesuaikan pin GPIO yang Anda gunakan
+BUZZER_PIN = "PC7" # Sesuaikan pin GPIO yang Anda gunakan
 
 # =====================================================================
 # --- PENGATURAN SCRIPT ---
@@ -53,7 +53,7 @@ def setup_gpio():
     if GPIO:
         try:
             GPIO.setwarnings(False)
-            GPIO.setmode(GPIO.BCM)
+            GPIO.setmode(GPIO.SUNXI)
             GPIO.setup(BUZZER_PIN, GPIO.OUT)
             GPIO.output(BUZZER_PIN, GPIO.LOW) # Pastikan buzzer mati saat mulai
             print(f"GPIO pin {BUZZER_PIN} untuk buzzer berhasil diinisialisasi pada {PI_TYPE}.")
@@ -76,7 +76,7 @@ except Exception as e:
 
 # --- Koneksi ke Database MySQL ---
 try:
-    db_connection = mysql.connector.connect(host=DB_HOST, user=DB_USER, password=DB_PASS, database=DB_NAME)
+    db_connection = mysql.connector.connect(host=DB_HOST, user=DB_USER, password=DB_PASS, database=DB_NAME, ssl_disabled=True)
     db_cursor = db_connection.cursor(buffered=True)
     print("Koneksi ke database MySQL berhasil.")
 except mysql.connector.Error as err:
@@ -149,7 +149,7 @@ except Exception as e:
 # =====================================================================
 # --- Mulai Video Capture ---
 # =====================================================================
-cap = cv2.VideoCapture(0)
+cap = cv2.VideoCapture(1)
 # Terapkan konfigurasi resolusi dan FPS
 cap.set(cv2.CAP_PROP_FRAME_WIDTH, FRAME_WIDTH)
 cap.set(cv2.CAP_PROP_FRAME_HEIGHT, FRAME_HEIGHT)
@@ -169,6 +169,9 @@ try:
         
         # Proses hanya jika ada wajah terdeteksi
         if len(faces) > 0:
+            # <<< TAMBAHAN: Catat waktu mulai deteksi dan pengenalan
+            start_detection_time = time.time()
+
             # Ambil wajah terbesar (biasanya yang paling dekat)
             x1, y1, width, height = sorted(faces, key=lambda f: f[2]*f[3], reverse=True)[0]
             x2, y2 = x1 + width, y1 + height
@@ -200,6 +203,11 @@ try:
                 status = "Tidak Dikenali"
                 box_color = (0, 0, 255) # Merah
 
+            # <<< TAMBAHAN: Catat waktu selesai dan hitung durasi deteksi
+            end_detection_time = time.time()
+            detection_duration = end_detection_time - start_detection_time
+            print(f"Waktu Deteksi & Pengenalan Wajah: {detection_duration:.4f} detik")
+
             # Cek cooldown sebelum mengirim notifikasi dan logging
             current_time = time.time()
             last_notified = last_notification_times.get(identity, 0)
@@ -221,7 +229,16 @@ try:
                             cv2.FONT_HERSHEY_SIMPLEX, 0.6, box_color, 2)
                 
                 # Kirim notifikasi dan simpan ke DB
+                # <<< TAMBAHAN: Catat waktu mulai pengiriman notifikasi
+                start_notif_time = time.time()
+                
                 send_telegram_notification(caption_text, frame_for_notif)
+                
+                # <<< TAMBAHAN: Catat waktu selesai dan hitung durasi pengiriman
+                end_notif_time = time.time()
+                notif_duration = end_notif_time - start_notif_time
+                print(f"Waktu Pengiriman Notifikasi: {notif_duration:.4f} detik")
+
                 log_to_database(timestamp, status, identity, frame)
                 
                 # Perbarui waktu notifikasi terakhir
