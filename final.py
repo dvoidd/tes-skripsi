@@ -17,7 +17,7 @@ PI_TYPE = "Orange Pi"
 # =====================================================================
 
 # --- Konfigurasi MySQL ---
-DB_HOST = "10.122.15.45"
+DB_HOST = "10.164.205.45"
 DB_USER = "opiuser"
 DB_PASS = "passwordku"  # Isi password database Anda, kosongkan jika tidak ada
 DB_NAME = "face_recognition_db"
@@ -38,7 +38,7 @@ FRAME_HEIGHT = 240
 FRAME_RATE = 15
 
 # Ambang batas, makin kecil makin ketat pengenalannya
-RECOGNITION_THRESHOLD = 0.75
+RECOGNITION_THRESHOLD = 0.7
 
 # Jeda waktu (dalam detik) untuk tidak mengirim notif ke orang yang sama
 NOTIFICATION_COOLDOWN = 5
